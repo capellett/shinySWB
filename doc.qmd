@@ -1,0 +1,482 @@
+---
+title: "Soil Water Balance Control File Wrapper"
+author: "CA Pellett"
+format: html
+# format: 
+#   html:
+#     page-layout: custom
+server: shiny
+---
+
+Use this interface to generate an organized and documented control file for the Soil Water Balance Model 2.0.
+
+After clicking through the options, the user can "create control file". That saves the control file in a designated project folder. Then, "run control file": the script supplies the cmd line with swb2 arguments to save the outputs in the same folder as the control file. This keeps the correct control file with its associated outputs.
+
+# 1. Define the Model Region
+
+## Base Cartographic Projection
+
+The SWB requires a cartographic projection for the model. Gridded inputs can be provided using other projections, specified later. If I have this right, the coordinate reference system (CRS) we are using is NAD83 South Carolina State Plane (ft), EPSG 2273. 
+
+
+```{r model-proj}
+projInput(inputId="base_projection", label="Base Projection Definition:",
+          value = default_projection)
+```
+
+## Model Grid Resolution
+Specify a width for the model grid cells (in the units of the model projection CRS).
+```{r model-resolution}
+shiny::numericInput("grid_res", "Grid Cell Width:",value = default_grid_res)
+```
+
+## Model Grid Size
+Specify the number of rows and columns for the model grid.
+```{r model-size}
+shiny::numericInput("grid_ny", "Number of rows (ny):", 
+            min = 1, value = default_grid_ny)
+
+shiny::numericInput("grid_nx", "Number of columns (nx):", 
+            min = 1, value = default_grid_nx)
+
+```
+
+## Model Grid Location
+Locate the model grid by providing the X and Y coordinates of the Lower Left corner of the model grid (in the coordinate system of the model projection CRS).
+```{r model-ll}
+shiny::numericInput("grid_xll", "X coordinate (xll):", value = default_grid_xll)
+
+shiny::numericInput("grid_yll", "Y coordinate (yll):", value = default_grid_yll)
+```
+
+
+# 2. Select Methods
+
+## Weather Inputs
+```{r precipitation}
+shiny::radioButtons(
+  "precipitation_method", "Precipitation Method:",
+  choices = c("Gridded", "Tabular", "Method of Fragments"),
+  selected='Gridded')
+
+# ### Method of Fragments Inputs
+# PRECIPITATION {grid type} {gridfile name}
+# RAINFALL_ZONE {grid type} {gridfile name}
+# RAINFALL_ZONE_PROJECTION_DEFINITION {proj4 string}
+# RAINFALL_ADJUST_FACTOR {grid type} {gridfile name}
+# RAINFALL_ADJUST_FACTOR_PROJECTION_DEFINITION {proj4 string}
+# FRAGMENTS_DAILY_FILE {path}
+
+# ### Tabular inputs
+# weather_date {mm/dd/yyyy}
+# precipitation_amount {inches}
+```
+
+## Fog
+```{r fog}
+shiny::radioButtons(
+  'fog_method', "Fog Method:", choices = c('None', 'Gridded', 'Gash'), 
+  selected = 'None')
+
+### Gash Method
+# FOG_RATIO {grid type} {gridfile name}
+# FOG_RATIO_PROJECTION_DEFINITION {proj4 string}
+
+## Monthly Grid Method
+## Lookup table, one row per landuse code. 
+# cols = 'fog_catch_efficiency' ## fraction of fog that is captured.
+```
+
+## Interception
+```{r interception}
+shiny::radioButtons(
+  "interception_method", "Interception Method:",
+  choices = c('Bucket', 'Horton', 'Gash', 'None'),
+  selected='Bucket')
+
+# ### Gash inputs
+# FRACTION_CANOPY_COVER {grid type} {gridfile name}
+# FRACTION_CANOPY_COVER_PROJECTION_DEFINITION {proj4 string}
+# EVAPORATION_TO_RAINFALL_RATIO {grid type} {gridfile name}
+# EVAPORATION_TO_RAINFALL_PROJECTION_DEFINITION {proj4 string}
+
+## Lookup Table Fields (one row per land use code)
+### Bucket
+# cols = c('growing_season_interception', 'nongrowing_season_interception')
+# rows = land-use codes
+
+### Horton: interception = a + b*I^n
+# cols = c(
+#   'growing_season_interception_a', 'growing_season_interception_b', 'growing_season_interception_n',
+#   'nongrowing_season_interception_a', 'nongrowing_season_interception_b', 'nongrowing_season_interception_n')
+
+### Gash
+# cols=c('canopy_storage_capacity', 'trunk_storage_capacity', 'stemflow_fraction')
+
+```
+The Gash method seems the most refined and the Bucket method the least refined.
+
+## Impervious Surface
+I haven't found the SWB docs on this input yet.
+Any cell that is assigned an impervious surface fraction or percent that is greater than zero will operate in a fundamentally different way than in original SWB code; in these cells, mass-balance calculations will be performed on an additional impervious surface storage reservoir (fig. 1–2), the capacity of which is determined by the impervious surface rainfall-retention depth.
+
+
+## Runoff
+```{r runoff}
+shiny::radioButtons(
+  'runoff_method', 'Runoff Method:',
+  choices = c('Curve Number', 'User-defined ratios'),
+  selected = 'Curve Number')
+
+## Monthly Grid Method Control File Syntax
+# RUNOFF_ZONE
+# RUNOFF_ZONE_PROJECTION_DEFINITION
+# RUNOFF_RATIO_MONTHLY_FILE
+
+## Runoff Lookup Tables
+### Curve Number Method
+## cols: 'CN_#' ## one column per soil hydrologic group, ex: CN_1, CN_2, CN_3, CN_4
+## rows: one row per land use code.
+
+
+### SWB1 options?
+# INITIAL_ABSTRACTION_METHOD (TR55 or HAWKINS) 
+## TR55 method is 20%
+## see Woodward et al 2003 for Hawkins method
+
+```
+
+## Routing
+```{r routing}
+shiny::radioButtons(
+  'flow_routing_method', 'Flow Routing Method:',
+  choices = c('None', 'D8 Flow Direction'),
+  selected = 'None')
+```
+If surface water body drainage network (creeks and streams) is denser than the model grid, then flow routing is not recommended. 2000x2000 ft > 90 acres, which is more than enough drainage area to create a perennial stream in South Carolina.
+
+## Ref ET
+```{r ref-et}
+shiny::radioButtons(
+  'ref_et_method', 'Potential or Reference Evapotranspiration Method:',
+  choices = c('Hargreaves-Samani', 'Jensen-Haise', 'Monthly Grid'),
+  selected = 'Hargreaves-Samani')
+
+## Monthly grid variables
+# REFERENCE_ET0 {grid type} {gridfile name}
+# REFERENCE_ET0_PROJECTION_DEFINITION {proj4 string}
+
+```
+Hargreaves-Samani is generally recommended. Jensen-Haise will generally produce similar results but is better suited for the Southwest US. Other Reference or Potential Evapotranspiration methods can pre-calculated and input using the Monthly Grid option. Penman-Monteith would be nice, but it requires wind and humidity data.
+
+
+## Actual ET, Soil Moisture Retention
+```{r actual-et}
+shiny::radioButtons(
+  'actual_et_method', 'Actual Evapotranspiration / Soil Moisture Retention Method:',
+  choices = c('Thornthwaite-Mather', 'FAO-56', 'FAO-56 Two Stage'),
+  selected = 'Thornthwaite-Mather')
+
+# SOIL_MOISTURE_METHOD THORNTHWAITE-MATHER_EQUATIONS # to check other methods(?)
+# SOIL_MOISTURE_METHOD FAO-56 # Allen et al 1998
+# SOIL_MOISTURE_METHOD FA)-56_TWO_STAGE # better suited for simulation of irrigated crops.
+
+## Lookup tables for FAO-56 and FAO-56 two stage:
+# *depletion fraction* # one per landuse code. Defines the soil moisture below which actual ET is less than potential ET.
+## depletion fraction p = RAW/TAW
+
+## lookup tables for FAO-56 two stage
+# total evaporable water
+# readily evaporable water
+# mean plant height
+
+```
+
+## Growing Degree Days
+```{r growing-degree-days}
+shiny::radioButtons(
+  'growing_degree_day_method', 'Growing Degree Day Method:',
+  choices = c('None', 'Baskerville-Emin'),
+  selected = 'None')
+
+## GDD lookup table columns
+# GDD_base_temperature ## assumed 50F
+# GDD_maximum_temperature ## assumed 86F
+# GDD_reset_date ## assumed Jan 1.
+```
+
+## Crop Coefficients
+```{r crop-coefficients-method}
+shiny::radioButtons(
+  'crop_coefficient_method', 'Crop Coefficient Method:',
+  choices = c('None', 'FAO-56'),
+  selected = 'None')
+
+## FAO-5 requires a big lookup table.
+```
+
+## Rooting Depth
+```{r rooting-depth-method}
+shiny::radioButtons(
+  'rooting_depth_method', 'Rooting Depth Method:',
+  choices = c('None', 'Static', 'Dynamic'),
+  selected = 'None')
+
+## rooting depth lookup table
+## for each landuse*soil group, provide a root-zone depth.
+## one row per land use category, one column per soil group.
+## column names RZ_1, RZ_2, RZ_3, etc.
+```
+
+## Irrigation
+```{r irrigation-method}
+shiny::radioButtons(
+  'irrigation_method', 'Irrigation Method:',
+  choices = c('None', 'FAO-56'),
+  selected = 'None')
+
+# IRRIGATION_MASK {grid type} {grid file}
+
+## Irrigation lookup table columns, one row per land use.
+# irrigation_start
+# irrigation_end
+# irrigation_application_efficiency
+# maximum_allowable_depletion
+# monthly_irrigation_schedule
+# irrigation_application_scheme 
+
+## Application schemes: field_capacity_original, field_capacity, 
+## defined_deficit, constant_amount, monthly_demand_based
+
+```
+
+## Direct Recharge
+```{r direct-recharge-method}
+## DIRECT_NET_INFILTRATION_METHOD
+shiny::radioButtons(
+  'direct_recharge_method', 'Direct Recharge Method:',
+  choices = c('None', 'Gridded'),
+  selected = 'Gridded')
+
+## Grid files. Each can also have a proj4 string. Inches per day. Can be time-series of grids.
+# CESSPOOL_LEAKAGE
+# STORM_DRAIN_LEAKAGE
+# DISPOSAL_WELL_DISCHARGE
+# WATER_BODY_LEAKAGE
+# ANNUAL_DIRECT_NET_INFILTRATION_RATE
+
+## Or, you can provide a landuse lookup table (ignored if recharge grids are provided).
+```
+
+## Direct Soil Moisture
+```{r}
+shiny::radioButtons(
+  'direct_soil_moisture_method', 'Direct Soil Moisture Method:',
+  choices = c('None', 'Gridded'),
+  selected = 'None')
+
+# DAILY_SEPTIC_DISCHARGE {grid type} {grid file} ## inches per day
+# ANNUAL_SEPTIC_DISCHARGE {grid type} {grid file} ## inches per year
+## Can also be provided as a land use lookup table.
+
+```
+
+## Maximum Soil Storage
+```{r max-soil-storage}
+shiny::radioButtons(
+  'soil_storage_max_method', 'Maximum Soil Storage Method:',
+  choices = c('Calculated', 'Gridded'),
+  selected = 'Calculated')
+
+## Calculation requires an available-water-capacity grid and rooting depths.
+
+## Gridded options:
+# SOIL_STORAGE_MAX {grid type} {grid file}
+# SOIL_STORAGE_MAX_PROJECTION_DEFINITION {proj4 string}
+
+```
+
+## Available Water Content
+```{r awc}
+shiny::radioButtons(
+  'available_water_capacity_method', 'Available Water Capacity Method:',
+  choices = c('Gridded', 'None'),
+  selected = 'Gridded')
+## Same as available water content.
+## NONE is valid if the soil storage max. is provided as a gridded dataset.
+
+## Gridded input
+# AVAILABLE_WATER_CAPACITY {grid type} {grid file}
+# AVAILABLE_WATER_CAPACITY_PROJECTION_DEFINITION {proj4 string}
+
+```
+
+## Growing Season
+```{r growing-season}
+shiny::sliderInput(
+  'growing_season', 'Growing Season:', min=1, max=366,
+  value=c(43, 304), step = 1, round = TRUE, dragRange=T)
+
+## allow user to select growing season using Dates.
+## make min and max and values be dates.
+## timeFormat = '%m %d'
+
+## another option is to provide a land use lookup table
+## for each land use, provide either dates OR triggers:
+
+## Dates, as DOY or as mm/dd
+# growing_season_start 
+# growing_season_end
+
+## Triggers
+# GDD_growing_season_start ## Fahrenheit*days
+# air_temperature_growing_season_end ## Degrees F
+
+```
+
+
+```{r}
+## Rejected Net Infiltration
+
+## lookup table, one row per landuse.
+# max_net_infil_# (one column per soil group)
+
+```
+
+# 3. Select Input Files
+
+## Static Inputs
+
+### Land Use
+
+#### Land Cover
+#### Irrigated Areas
+
+### Soils
+
+#### Hydrologic Soil Groups
+#### Available Water Content
+
+```{r}
+## make this reactive to the selection of gridded methods.
+```
+
+
+## Initial Conditions
+```{r initial-conditions}
+## Soil Moisture
+shiny::radioButtons(
+  'initial_soil_moisture_method', 'Initial Soil Moisture Input Format:',
+  choices = c('constant', 'gridded'),
+  selected = 'constant')
+
+shiny::numericInput(
+  'initial_soil_moisture_constant', 'Initial Soil Moisture Percent:',
+  value=50, min=0, max=100, step=1)
+
+shiny::fileInput(
+  'initial_soil_moisture_grid', 'Initial Soil Moisture Grid:')
+
+## Snow Cover
+shiny::radioButtons(
+  'initial_snow_cover_storage_method', 'Initial Snow Cover Input Format:',
+  choices = c('constant', 'gridded'),
+  selected = 'constant')
+
+shiny::numericInput(
+  'initial_snow_cover_storage_constant', 'Initial Snow Cover Storage:',
+  value=0, min=0)
+
+shiny::fileInput(
+  'initial_snow_moisture_grid', 'Initial Snow Cover Storage Grid:')
+
+## Frozen Ground
+# INITIAL_CONTINUOUS_FROZEN_GROUND_INDEX CONSTANT [value]
+# INITIAL_CONTINUOUS_FROZEN_GROUND_INDEX {grid type} {grid file}
+# UPPER_LIMIT_CFGI
+# LOWER_LIMIT_CFGI
+
+```
+
+## Weather Grids
+
+```{r grid-names}
+shiny::checkboxGroupInput(
+  'weather_grid_names', label='Gridded Weather Inputs',
+  choiceNames = c('Precipitation', 'Maximum Temperature', 'Minimum Temperature'),
+  choiceValues = c('pr', 'tmmn', 'tmmx'), selected = c('pr', 'tmmn', 'tmmx'))
+```
+
+Options for each weather grid:
+
+### Projection (PROJ string)
+```{r grid-proj}
+shiny::checkboxInput('_use_base_proj', 'Grid Projection is same as Base Projection',
+                     value=T)
+projInput(inputId='_PROJECTION_DEFINITION', label='Grid Projection Definition:',
+          value=default_proj)
+```
+
+
+
+
+# 4. Output Options
+## Output File Prefix
+```{r}
+shiny::textInput('OUTPUT_GRID_PREFIX', 'Output file prefix:',
+                 value='test1_/')
+```
+
+## Output Options
+```{r}
+# OUTPUT_OPTIONS {variable_name} {daily_output} {monthly_output} {annual_output}
+## 24 variables, see table 11
+## valid output types: NONE, GRAPH, GRID, or BOTH.
+
+"OUTPUT_OPTIONS RECHARGE NONE NONE BOTH"
+```
+GROSS_PRECIP, SNOWFALL, SNOWCOVER, CFGI, CHG_IN_SNOW_COV, SNOWMELT, MIN_TEMP, MAX_TEMP, AVG_TEMP, INTERCEPTION, NET_PRECIP, INFLOW, OUTFLOW, RUNOFF_OUTSIDE, REJECTED_RECHARGE, NET_INFLOW, NET_INFIL, POT_ET, ACT_ET, P_MINUS_PET, SM_DEFICIT, SM_SURPLUS, SM_APWL, SOIL_MOISTURE, CHG_IN_SOIL_MOIS, RECHARGE
+
+This might be deprecated to SWB1, and not applicable in SWB2. It was in Priyanka's control file, but not in the SWB2 examples. It doesn't seem to have been working in the control file, because she was outputting daily recharge values. It would be nice if we could output a final soil moisture value, so we could use that an input for the next sequential model run.
+
+## Dump Variables
+```{r}
+# DUMP_VARIABLES COORDINATES 558059. 432426. ## CRS coordinates
+# DUMP_VARIABLES x y ## x is column number, y is row number, of the model grid.
+
+```
+This option can provide a lot of detail about what SWB is doing, useful for debugging.
+
+
+## Date Range
+
+Remember to provide adequate time for model spin-up, especially if you are not providing gridded initial condition inputs.
+
+### Start Date
+### End Date
+```{r}
+
+
+```
+
+```{r}
+# shinyFiles::shinySaveButton()
+
+```
+
+```{r}
+#| context: server
+
+```
+
+# 5. Run-time options
+
+Usage: swb2 control_file_name
+Options:
+ --output_prefix= {test to use as a prefix for output filenames}
+ --output_dir= {directory to place output (relative or absolute)}
+ --data_dir= {directory to search for input grids and lookup tables}
+ --weather_data_dir= {directory to search for weather data grids}
+
+
+
